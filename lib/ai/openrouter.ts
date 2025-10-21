@@ -1,23 +1,52 @@
 // OpenRouter AI service for layout and component analysis
 import OpenAI from 'openai';
+import { AI_MODELS, TEMPERATURE, OPENROUTER_CONFIG } from './config';
 
 if (!process.env.OPENROUTER_API_KEY) {
   throw new Error('OPENROUTER_API_KEY is not set in environment variables');
 }
 
 const openrouter = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
+  baseURL: OPENROUTER_CONFIG.baseURL,
   apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-    'X-Title': 'AI Website Builder',
-  },
+  defaultHeaders: OPENROUTER_CONFIG.defaultHeaders,
 });
+
+/**
+ * Enhanced error handler for OpenRouter API calls
+ */
+function handleOpenRouterError(error: any, context: string): never {
+  console.error(`${context} error:`, error);
+
+  // Check for specific error types
+  if (error.status === 401) {
+    throw new Error('Invalid OpenRouter API key. Please check your OPENROUTER_API_KEY in .env.local');
+  }
+
+  if (error.status === 429) {
+    throw new Error('Rate limit exceeded. Please try again in a few moments.');
+  }
+
+  if (error.status === 402) {
+    throw new Error('Insufficient OpenRouter credits. Please add credits at https://openrouter.ai/credits');
+  }
+
+  if (error.status === 400) {
+    throw new Error(`Invalid request: ${error.message || 'Bad request to AI service'}`);
+  }
+
+  if (error.message?.includes('timeout')) {
+    throw new Error('AI service timeout. The request took too long. Please try again.');
+  }
+
+  // Generic error
+  throw new Error(`${context} failed: ${error.message || 'Unknown error'}`);
+}
 
 export async function analyzeLayoutStructure(visionAnalysis: any): Promise<any> {
   try {
     const response = await openrouter.chat.completions.create({
-      model: 'anthropic/claude-3.5-sonnet', // or 'openai/gpt-4-turbo'
+      model: AI_MODELS.layout,
       messages: [
         {
           role: 'system',
@@ -57,7 +86,7 @@ Provide a detailed layout plan in JSON:
 }`,
         },
       ],
-      temperature: 0.7,
+      temperature: TEMPERATURE.analysis,
     });
 
     const content = response.choices[0]?.message?.content || '{}';
@@ -68,8 +97,7 @@ Provide a detailed layout plan in JSON:
 
     return { raw: content };
   } catch (error) {
-    console.error('OpenRouter layout analysis error:', error);
-    throw error;
+    handleOpenRouterError(error, 'Layout analysis');
   }
 }
 
@@ -79,7 +107,7 @@ export async function mapSketchToComponents(
 ): Promise<any> {
   try {
     const response = await openrouter.chat.completions.create({
-      model: 'anthropic/claude-3.5-sonnet',
+      model: AI_MODELS.components,
       messages: [
         {
           role: 'system',
@@ -125,7 +153,7 @@ For each identified element, suggest:
 }`,
         },
       ],
-      temperature: 0.7,
+      temperature: TEMPERATURE.analysis,
     });
 
     const content = response.choices[0]?.message?.content || '{}';
@@ -136,15 +164,14 @@ For each identified element, suggest:
 
     return { raw: content };
   } catch (error) {
-    console.error('OpenRouter component mapping error:', error);
-    throw error;
+    handleOpenRouterError(error, 'Component mapping');
   }
 }
 
 export async function generateHTML(components: any[]): Promise<string> {
   try {
     const response = await openrouter.chat.completions.create({
-      model: 'anthropic/claude-3.5-sonnet',
+      model: AI_MODELS.htmlGen,
       messages: [
         {
           role: 'system',
@@ -168,20 +195,19 @@ Requirements:
 Return ONLY the HTML code, no markdown formatting.`,
         },
       ],
-      temperature: 0.3,
+      temperature: TEMPERATURE.codeGen,
     });
 
     return response.choices[0]?.message?.content || '';
   } catch (error) {
-    console.error('OpenRouter HTML generation error:', error);
-    throw error;
+    handleOpenRouterError(error, 'HTML generation');
   }
 }
 
 export async function generateCSS(components: any[], htmlCode: string): Promise<string> {
   try {
     const response = await openrouter.chat.completions.create({
-      model: 'anthropic/claude-3.5-sonnet',
+      model: AI_MODELS.cssGen,
       messages: [
         {
           role: 'system',
@@ -211,13 +237,12 @@ Requirements:
 Return ONLY the CSS code, no markdown formatting.`,
         },
       ],
-      temperature: 0.3,
+      temperature: TEMPERATURE.codeGen,
     });
 
     return response.choices[0]?.message?.content || '';
   } catch (error) {
-    console.error('OpenRouter CSS generation error:', error);
-    throw error;
+    handleOpenRouterError(error, 'CSS generation');
   }
 }
 
@@ -229,7 +254,7 @@ export async function generateJavaScript(components: any[], interactivity: strin
     }
 
     const response = await openrouter.chat.completions.create({
-      model: 'anthropic/claude-3.5-sonnet',
+      model: AI_MODELS.jsGen,
       messages: [
         {
           role: 'system',
@@ -258,12 +283,11 @@ Requirements:
 Return ONLY the JavaScript code, no markdown formatting.`,
         },
       ],
-      temperature: 0.3,
+      temperature: TEMPERATURE.codeGen,
     });
 
     return response.choices[0]?.message?.content || '';
   } catch (error) {
-    console.error('OpenRouter JS generation error:', error);
-    throw error;
+    handleOpenRouterError(error, 'JavaScript generation');
   }
 }
